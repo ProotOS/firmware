@@ -122,7 +122,12 @@ jobs:
     # Run on tags only; the build job always runs (for branch CI too)
     if: github.ref_type == 'tag'
     permissions:
-      contents: write
+      contents: write  # create GitHub release
+      pages: write     # upload Pages artifact
+      id-token: write  # required by actions/deploy-pages OIDC auth
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Download all firmware artifacts
         uses: actions/download-artifact@v4
@@ -174,3 +179,15 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           files: release/*
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The actions/deploy-pages method replaces the entire site on each
+          # deploy, so nest firmware files under a firmware/ subdirectory inside
+          # the artifact so your site root can still hold other content.
+          path: release/
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
