@@ -62,6 +62,7 @@ jobs:
           APP_OFFSET=$(python3 -c "
           import json, pathlib
           meta = json.loads(pathlib.Path('${BUILD_DIR}/project_description.json').read_text())
+          print(meta)
           print(hex(meta['app_flash_offset']))
           ")
 
