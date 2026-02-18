@@ -1,0 +1,12 @@
+# ─── ESP32-C6 specific overrides ─────────────────────────────────────
+# Waveshare ESP32-C6-LCD-1.69: 16MB flash, no PSRAM
+
+# ─── Flash ───────────────────────────────────────────────────────────
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# ─── No PSRAM ────────────────────────────────────────────────────────
+# CONFIG_SPIRAM is not set
+
+# ─── BLE 5.3 ────────────────────────────────────────────────────────
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=y
