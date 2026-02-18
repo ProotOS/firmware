@@ -43,11 +43,13 @@ jobs:
             build
 
       - name: Collect firmware artifacts
+        env:
+          BOARD: ${{ matrix.board.name }}
+          CHIP: ${{ matrix.board.chip }}
         run: |
-          BOARD="${{ matrix.board.name }}"
-          TARGET="${{ matrix.board.target }}"
           BUILD_DIR="build"
           OUT_DIR="firmware/${BOARD}"
+          export BUILD_DIR OUT_DIR
           mkdir -p "${OUT_DIR}"
 
           # Copy the binaries needed to flash a complete image
@@ -58,50 +60,51 @@ jobs:
           # Copy merged flash args so offsets are captured alongside binaries
           cp "${BUILD_DIR}/flash_args"                      "${OUT_DIR}/flash_args.txt"
 
-          # Read flash offsets from the build system
-          APP_OFFSET=$(python3 -c "
-          import json, pathlib
-          meta = json.loads(pathlib.Path('${BUILD_DIR}/project_description.json').read_text())
-          print(meta)
-          print(hex(meta['app_flash_offset']))
-          ")
+          # Parse flash_args for offsets — format is "<offset> <path>" per line,
+          # with a leading options line that has no offset (starts with '--').
+          python3 - <<'PYEOF'
+          import pathlib, json, os
 
-          BOOTLOADER_OFFSET=0x0
-          PT_OFFSET=0x8000
+          build_dir = pathlib.Path(os.environ["BUILD_DIR"])
+          out_dir   = pathlib.Path(os.environ["OUT_DIR"])
+          board     = os.environ["BOARD"]
+          chip      = os.environ["CHIP"]
+          sha       = os.environ.get("GITHUB_SHA", "dev")[:8]
 
-          # esptool-js manifest (https://github.com/espressif/esptool-js)
-          cat > "${OUT_DIR}/manifest.json" <<EOF
-          {
-            "name": "Prootos Firmware - ${BOARD}",
-            "version": "${GITHUB_SHA::8}",
-            "builds": [
-              {
-                "chipFamily": "${{ matrix.board.chip }}",
-                "parts": [
-                  {
-                    "path": "bootloader.bin",
-                    "offset": ${BOOTLOADER_OFFSET}
-                  },
-                  {
-                    "path": "partition-table.bin",
-                    "offset": ${PT_OFFSET}
-                  },
-                  {
-                    "path": "app.bin",
-                    "offset": ${APP_OFFSET}
-                  }
-                ]
-              }
-            ]
+          parts = []
+          for line in (build_dir / "flash_args").read_text().splitlines():
+              line = line.strip()
+              if not line or line.startswith("--"):
+                  continue
+              offset_str, rel_path = line.split(None, 1)
+              offset = int(offset_str, 16)
+              basename = pathlib.Path(rel_path).name
+
+              # Resolve to the renamed copy we already placed in out_dir
+              if basename == "bootloader.bin":
+                  dest = "bootloader.bin"
+              elif basename == "partition-table.bin":
+                  dest = "partition-table.bin"
+              elif basename.endswith(".bin") and "srmodel" not in basename and "ota_data" not in basename:
+                  # This is the app binary
+                  dest = "app.bin"
+              else:
+                  # Skip models / OTA data — too large and not needed for initial flash via esptool-js
+                  continue
+
+              parts.append({"path": dest, "offset": offset})
+
+          # Sort by offset for clarity
+          parts.sort(key=lambda p: p["offset"])
+
+          manifest = {
+              "name": f"Prootos Firmware - {board}",
+              "version": sha,
+              "builds": [{"chipFamily": chip, "parts": parts}],
           }
-          EOF
-
-          # Trim leading whitespace from heredoc
-          python3 -c "
-          import json, pathlib
-          p = pathlib.Path('${OUT_DIR}/manifest.json')
-          p.write_text(json.dumps(json.loads(p.read_text()), indent=2) + '\n')
-          "
+          (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PYEOF
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
